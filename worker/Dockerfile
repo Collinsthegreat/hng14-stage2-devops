@@ -1,26 +1,25 @@
 # ── Stage 1: builder ──────────────────────────────────────────────────────────
-FROM python:3.11-slim AS builder
+FROM python:3.11-alpine AS builder
 
 WORKDIR /build
 
-# hadolint ignore=DL3008
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# hadolint ignore=DL3018
+RUN apk update && apk upgrade --no-cache && \
+    apk add --no-cache gcc musl-dev linux-headers
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
-FROM python:3.11-slim AS runtime
+FROM python:3.11-alpine AS runtime
 
 WORKDIR /app
 
-RUN apt-get update && apt-get upgrade -y && \
-    rm -rf /var/lib/apt/lists/* && \
-    groupadd --gid 1001 appgroup && \
-    useradd --uid 1001 --gid appgroup --shell /bin/sh --create-home appuser
+# hadolint ignore=DL3018
+RUN apk update && apk upgrade --no-cache && \
+    addgroup -g 1001 appgroup && \
+    adduser -u 1001 -G appgroup -s /bin/sh -D appuser
 
 COPY --from=builder /install /usr/local
 COPY --chown=appuser:appgroup . .
