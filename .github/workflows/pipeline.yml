@@ -20,7 +20,8 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -72,7 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -113,7 +115,8 @@ jobs:
           - 5000:5000
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -121,7 +124,7 @@ jobs:
           driver-opts: network=host
 
       - name: Set image tag
-        run: echo "SHA_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV
+        run: echo "SHA_TAG=${{ github.sha }}" >> $GITHUB_ENV
 
       - name: Build and push API image
         uses: docker/build-push-action@v5
@@ -129,9 +132,11 @@ jobs:
           context: ./api
           push: true
           tags: |
-            ${{ env.API_IMAGE }}:${{ env.SHA_TAG }}
+            ${{ env.API_IMAGE }}:${{ github.sha }}
             ${{ env.API_IMAGE }}:latest
           network: host
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build and push Worker image
         uses: docker/build-push-action@v5
@@ -139,9 +144,11 @@ jobs:
           context: ./worker
           push: true
           tags: |
-            ${{ env.WORKER_IMAGE }}:${{ env.SHA_TAG }}
+            ${{ env.WORKER_IMAGE }}:${{ github.sha }}
             ${{ env.WORKER_IMAGE }}:latest
           network: host
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build and push Frontend image
         uses: docker/build-push-action@v5
@@ -149,18 +156,20 @@ jobs:
           context: ./frontend
           push: true
           tags: |
-            ${{ env.FRONTEND_IMAGE }}:${{ env.SHA_TAG }}
+            ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
             ${{ env.FRONTEND_IMAGE }}:latest
           network: host
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Save image tarballs for downstream jobs
         run: |
-          docker pull ${{ env.API_IMAGE }}:${{ env.SHA_TAG }}
-          docker pull ${{ env.WORKER_IMAGE }}:${{ env.SHA_TAG }}
-          docker pull ${{ env.FRONTEND_IMAGE }}:${{ env.SHA_TAG }}
-          docker save ${{ env.API_IMAGE }}:${{ env.SHA_TAG }} -o api-image.tar
-          docker save ${{ env.WORKER_IMAGE }}:${{ env.SHA_TAG }} -o worker-image.tar
-          docker save ${{ env.FRONTEND_IMAGE }}:${{ env.SHA_TAG }} -o frontend-image.tar
+          docker pull ${{ env.API_IMAGE }}:${{ github.sha }}
+          docker pull ${{ env.WORKER_IMAGE }}:${{ github.sha }}
+          docker pull ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          docker save ${{ env.API_IMAGE }}:${{ github.sha }} -o api-image.tar
+          docker save ${{ env.WORKER_IMAGE }}:${{ github.sha }} -o worker-image.tar
+          docker save ${{ env.FRONTEND_IMAGE }}:${{ github.sha }} -o frontend-image.tar
 
       - name: Upload image tarballs
         uses: actions/upload-artifact@v4
@@ -179,7 +188,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Download image tarballs
         uses: actions/download-artifact@v4
@@ -193,7 +203,7 @@ jobs:
           docker load -i frontend-image.tar
 
       - name: Set image tag
-        run: echo "SHA_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV
+        run: echo "SHA_TAG=${{ github.sha }}" >> $GITHUB_ENV
 
       - name: Install Trivy
         run: |
@@ -252,7 +262,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: security-scan
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Download image tarballs
         uses: actions/download-artifact@v4
@@ -346,10 +357,11 @@ jobs:
     needs: integration-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set image tag
-        run: echo "SHA_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV
+        run: echo "SHA_TAG=${{ github.sha }}" >> $GITHUB_ENV
 
       - name: Set up SSH key
         run: |
