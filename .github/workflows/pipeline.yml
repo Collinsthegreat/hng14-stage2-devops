@@ -363,58 +363,62 @@ jobs:
           # Add server fingerprint
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Copy docker-compose.yml and .env.example to server
-        run: |
-          scp -i ~/.ssh/deploy_key \
-            docker-compose.yml \
-            .env.example \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/home/${{ secrets.DEPLOY_USER }}/stage2/
-
-      - name: Rolling deploy on server
+      - name: Clone or update repo on server then rolling deploy
         run: |
           ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'ENDSSH'
             set -e
-            cd /home/hngdevops/stage2
+            DEPLOY_DIR="/home/hngdevops/stage2"
+            REPO_URL="https://github.com/Collinsthegreat/hng14-stage2-devops.git"
+            REPO_DIR="$DEPLOY_DIR/repo"
 
-            # Pull latest images
-            docker compose pull || true
+            if [ -d "$REPO_DIR/.git" ]; then
+              echo "Updating existing repo..."
+              cd $REPO_DIR
+              git fetch origin
+              git reset --hard origin/main
+            else
+              echo "Cloning repo for first time..."
+              git clone $REPO_URL $REPO_DIR
+              cd $REPO_DIR
+            fi
 
-            # Rolling update: bring up new containers service by service
-            # API rolling update
-            docker compose up -d --no-deps --build api
-            timeout 60 bash -c 'until docker inspect --format="{{.State.Health.Status}}" $(docker compose ps -q api) | grep -q "healthy"; do
-              echo "Waiting for API health check..."
-              sleep 5
-            done' || {
-              echo "API health check failed within 60s — aborting, old container preserved"
-              docker compose up -d --no-deps api
-              exit 1
-            }
-            echo "API is healthy"
+            cp $DEPLOY_DIR/.env $REPO_DIR/.env
+            cd $REPO_DIR
 
-            # Worker rolling update
-            docker compose up -d --no-deps --build worker
-            timeout 60 bash -c 'until docker inspect --format="{{.State.Health.Status}}" $(docker compose ps -q worker) | grep -q "healthy"; do
-              echo "Waiting for Worker health check..."
-              sleep 5
-            done' || {
-              echo "Worker health check failed within 60s — aborting"
-              docker compose up -d --no-deps worker
-              exit 1
-            }
-            echo "Worker is healthy"
+            docker compose up -d redis
+            timeout 60 bash -c 'until docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; do
+              echo "Waiting for Redis..."
+              sleep 3
+            done'
+            echo "Redis is ready"
 
-            # Frontend rolling update
-            docker compose up -d --no-deps --build frontend
-            timeout 60 bash -c 'until docker inspect --format="{{.State.Health.Status}}" $(docker compose ps -q frontend) | grep -q "healthy"; do
-              echo "Waiting for Frontend health check..."
-              sleep 5
-            done' || {
-              echo "Frontend health check failed within 60s — aborting"
-              docker compose up -d --no-deps frontend
-              exit 1
-            }
-            echo "Frontend is healthy. Deploy complete."
+            for SERVICE in api worker frontend; do
+              echo "===== Rolling update: $SERVICE ====="
+              docker compose up -d --no-deps --build $SERVICE
 
+              TIMEOUT=120
+              ELAPSED=0
+              while [ $ELAPSED -lt $TIMEOUT ]; do
+                CONTAINER=$(docker compose ps -q $SERVICE 2>/dev/null | head -1)
+                if [ -n "$CONTAINER" ]; then
+                  STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || echo "none")
+                  echo "$SERVICE: $STATUS"
+                  if [ "$STATUS" = "healthy" ]; then
+                    echo "$SERVICE is healthy"
+                    break
+                  fi
+                fi
+                sleep 5
+                ELAPSED=$((ELAPSED + 5))
+              done
+
+              if [ $ELAPSED -ge $TIMEOUT ]; then
+                echo "$SERVICE failed health check — rolling back"
+                docker compose up -d --no-deps $SERVICE
+                exit 1
+              fi
+            done
+
+            echo "===== Deploy complete ====="
             docker compose ps
           ENDSSH
