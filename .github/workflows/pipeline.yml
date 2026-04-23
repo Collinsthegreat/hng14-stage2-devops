@@ -351,24 +351,28 @@ jobs:
       - name: Set image tag
         run: echo "SHA_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV
 
-      - name: Set up SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
-
-      - name: Add server to known hosts
-        run: ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          # DEPLOY_SSH_KEY must be stored as single-line base64 (cat key | base64 -w 0)
+          # This eliminates ALL copy-paste line-ending corruption
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" | tr -d '[:space:]' | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Validate key is parseable - will fail fast with clear error if secret is wrong
+          ssh-keygen -l -f ~/.ssh/deploy_key
+          # Add server fingerprint
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
       - name: Copy docker-compose.yml and .env.example to server
         run: |
-          scp \
+          scp -i ~/.ssh/deploy_key \
             docker-compose.yml \
             .env.example \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/home/${{ secrets.DEPLOY_USER }}/stage2/
 
       - name: Rolling deploy on server
         run: |
-          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'ENDSSH'
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'ENDSSH'
             set -e
             cd /home/hngdevops/stage2
 
