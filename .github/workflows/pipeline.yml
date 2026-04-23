@@ -195,45 +195,54 @@ jobs:
       - name: Set image tag
         run: echo "SHA_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV
 
-      - name: Scan API image with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.API_IMAGE }}:${{ env.SHA_TAG }}
-          format: sarif
-          output: trivy-api.sarif
-          severity: CRITICAL
-          exit-code: 1
-          ignore-unfixed: true
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.70.0
 
-      - name: Scan Worker image with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.WORKER_IMAGE }}:${{ env.SHA_TAG }}
-          format: sarif
-          output: trivy-worker.sarif
-          severity: CRITICAL
-          exit-code: 1
-          ignore-unfixed: true
+      - name: Scan images with Trivy (fail on fixable CRITICAL CVEs only)
+        run: |
+          set -e
+          FAILED=0
 
-      - name: Scan Frontend image with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.FRONTEND_IMAGE }}:${{ env.SHA_TAG }}
-          format: sarif
-          output: trivy-frontend.sarif
-          severity: CRITICAL
-          exit-code: 1
-          ignore-unfixed: true
+          for IMAGE in \
+            "${{ env.API_IMAGE }}:${{ env.SHA_TAG }}" \
+            "${{ env.WORKER_IMAGE }}:${{ env.SHA_TAG }}" \
+            "${{ env.FRONTEND_IMAGE }}:${{ env.SHA_TAG }}";
+          do
+            NAME=$(echo $IMAGE | sed 's|localhost:5000/||' | tr ':/' '--')
+            echo "===== Scanning $IMAGE ====="
+
+            # Generate SARIF report (never fails)
+            trivy image \
+              --format sarif \
+              --output "trivy-${NAME}.sarif" \
+              --ignore-unfixed \
+              --severity CRITICAL \
+              --no-progress \
+              "$IMAGE" || true
+
+            # Fail the pipeline only if fixable CRITICALs exist
+            trivy image \
+              --format table \
+              --exit-code 1 \
+              --ignore-unfixed \
+              --severity CRITICAL \
+              --no-progress \
+              "$IMAGE" || FAILED=1
+          done
+
+          if [ $FAILED -eq 1 ]; then
+            echo "One or more images have fixable CRITICAL CVEs. Failing pipeline."
+            exit 1
+          fi
+          echo "All images passed security scan."
 
       - name: Upload Trivy SARIF results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: trivy-sarif-results
-          path: |
-            trivy-api.sarif
-            trivy-worker.sarif
-            trivy-frontend.sarif
+          path: trivy-*.sarif
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STAGE 5: INTEGRATION TEST
