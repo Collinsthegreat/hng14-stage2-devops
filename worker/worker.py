@@ -3,7 +3,6 @@ import time
 import os
 import signal
 import json
-import sys
 
 # Redis connection using environment variables
 redis_client = redis.Redis(
