@@ -1,0 +1,13 @@
+.env
+*.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+node_modules/
+*.log
+.DS_Store
+coverage/
+htmlcov/
+.coverage
+trivy-results/
