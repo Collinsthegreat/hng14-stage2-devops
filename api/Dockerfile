@@ -5,7 +5,7 @@ WORKDIR /build
 
 # Install build dependencies
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
@@ -18,8 +18,10 @@ FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
-# Create non-root user
-RUN groupadd --gid 1001 appgroup && \
+# Upgrades and Create non-root user
+RUN apt-get update && apt-get upgrade -y && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --gid 1001 appgroup && \
     useradd --uid 1001 --gid appgroup --shell /bin/sh --create-home appuser
 
 # Copy installed packages from builder

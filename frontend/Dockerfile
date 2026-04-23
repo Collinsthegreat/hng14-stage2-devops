@@ -4,7 +4,8 @@ FROM node:20-alpine AS builder
 WORKDIR /build
 
 COPY package*.json ./
-RUN npm ci --only=production
+RUN apk update && apk upgrade --no-cache && \
+    npm ci --only=production
 
 COPY . .
 
@@ -13,7 +14,8 @@ FROM node:20-alpine AS runtime
 
 WORKDIR /app
 
-RUN addgroup --gid 1001 appgroup && \
+RUN apk update && apk upgrade --no-cache && \
+    addgroup --gid 1001 appgroup && \
     adduser --uid 1001 --ingroup appgroup --shell /bin/sh --disabled-password appuser
 
 COPY --from=builder --chown=appuser:appgroup /build/node_modules ./node_modules
