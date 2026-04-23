@@ -300,13 +300,13 @@ jobs:
             sleep 5
           done'
 
-      - name: Submit a job and poll until complete
+      - name: Submit a job through the frontend and poll until complete
         run: |
           set -e
 
-          # Submit job through the API
-          echo "Submitting job..."
-          RESPONSE=$(curl -sf -X POST http://localhost:8000/jobs \
+          # Submit job THROUGH THE FRONTEND (not directly to API)
+          echo "Submitting job via frontend /submit..."
+          RESPONSE=$(curl -sf -X POST http://localhost:3000/submit \
             -H "Content-Type: application/json" \
             -d '{"task": "integration-test-job"}')
           echo "Submit response: $RESPONSE"
@@ -314,7 +314,7 @@ jobs:
           JOB_ID=$(echo $RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin)['job_id'])")
           echo "Job ID: $JOB_ID"
 
-          # Poll until job is completed or timeout
+          # Poll job status via API until completed or timeout
           echo "Polling for job completion..."
           TIMEOUT=60
           ELAPSED=0
@@ -324,13 +324,13 @@ jobs:
             STATUS=$(echo $STATUS_RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin)['status'])")
             echo "Current status: $STATUS"
             if [ "$STATUS" = "completed" ]; then
-              echo "Job completed successfully!"
+              echo "Job completed successfully — integration test PASSED"
               exit 0
             fi
             sleep 5
             ELAPSED=$((ELAPSED + 5))
           done
-          echo "Job did not complete within $TIMEOUT seconds"
+          echo "ERROR: Job did not complete within $TIMEOUT seconds"
           exit 1
 
       - name: Tear down stack (always)
