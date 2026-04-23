@@ -354,8 +354,14 @@ jobs:
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          # Use printf to avoid echo adding extra newline on some shells
+          # Strip Windows \r carriage returns which corrupt the key format
+          printf '%s' "${{ secrets.DEPLOY_SSH_KEY }}" | tr -d '\r' > ~/.ssh/deploy_key
+          # Ensure the key file ends with exactly one newline (required by OpenSSH)
+          echo "" >> ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          # Validate the key is parseable before attempting connection
+          ssh-keygen -l -f ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
       - name: Copy docker-compose.yml and .env.example to server
